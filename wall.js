@@ -36,10 +36,18 @@ function LootBox(x, y, size = 20, clr = 'yellow') {
   };
 
   this.checkPickup = function(tank) {
-    if (!this.collected && dist(tank.pos.x, tank.pos.y, this.pos.x, this.pos.y) < this.size) {
-      this.collected = true;
-      tank.hasSpreadshot = true;  // Grant spreadshot ability
+    if (!this.collected) {
+      // Check for collision between the loot box (rectangle) and the tank's hitbox (polygon)
+      let lootBoxLeft = this.pos.x - this.size / 2;
+      let lootBoxTop = this.pos.y - this.size / 2;
+      let lootBoxWidth = this.size;
+      let lootBoxHeight = this.size;
+  
+      if (collideRectPoly(lootBoxLeft, lootBoxTop, lootBoxWidth, lootBoxHeight, tank.hitbox)) {
+        this.collected = true;
+        tank.hasSpreadshot = true;  // Grant spreadshot ability
+      }
     }
-  };
+  };  
 }
 
