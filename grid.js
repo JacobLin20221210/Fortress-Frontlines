@@ -9,6 +9,32 @@ function randmap(){
         return map2();
 }
 
+function generateObstacleGrid() {
+    gridWidth = Math.ceil(width / gridSize);
+    gridHeight = Math.ceil(height / gridSize);
+  
+    obstacleGrid = Array(gridWidth)
+      .fill()
+      .map(() => Array(gridHeight).fill(0)); // 0 means walkable
+  
+    for (let wall of walls) {
+      let startX = Math.floor((wall.pos.x - wall.a) / gridSize);
+      let endX = Math.ceil((wall.pos.x + wall.a) / gridSize);
+      let startY = Math.floor((wall.pos.y - wall.b) / gridSize);
+      let endY = Math.ceil((wall.pos.y + wall.b) / gridSize);
+  
+      for (let x = startX; x <= endX; x++) {
+        for (let y = startY; y <= endY; y++) {
+          if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
+            obstacleGrid[x][y] = 1; // Mark as obstacle
+          }
+        }
+      }
+    }
+  }
+  
+
+
 function isPositionClear(x, y, walls, buffer = 30) {
     for (let wall of walls) {
       let wallLeft = wall.pos.x - wall.a - buffer;
@@ -38,7 +64,7 @@ function isPositionClear(x, y, walls, buffer = 30) {
           map.push(new Wall(i, j, 20, 80));
           map.push(new Wall(i, j, 80, 20));
         } else if (random() < 0.4) {
-          map.push(new Wall(i, j, 10, 10, -1.5, 'blue'));
+          //map.push(new Wall(i, j, 10, 10, -1.5, 'blue'));
         }
   
         // LootBox spawn condition with position check
@@ -68,7 +94,7 @@ function isPositionClear(x, y, walls, buffer = 30) {
         if (random() < 0.1) {
           // Empty space occasionally
         } else if (random() < 0.15) {
-          map.push(new Wall(i, j, 10, 10, -1.5, 'blue'));
+          //map.push(new Wall(i, j, 10, 10, -1.5, 'blue'));
         } else if (random() < 0.5) {
           map.push(new Wall(i, j, 20, 90));
         } else {
