@@ -40,21 +40,6 @@ Welcome to Fortress Frontlines, a top-down 2D tank shooter game, inspired by the
     Resume: Click the "Resume" button
     Exit to Menu: Click "Exit to Menu"
 
-🗂️ Project Structure
-
-fortress-frontlines/
-├── index.html              # Main HTML file
-├── tank_battles.js         # Core game logic
-├── tank.js                 # Tank mechanics
-├── bullet.js               # Bullet mechanics
-├── wall.js                 # Wall/obstacle mechanics
-├── grid.js                 # Grid and obstacle generation
-└── lib/                    # p5.js libraries
-    ├── p5.min.js
-    ├── p5.dom.min.js
-    ├── p5.sound.min.js
-    └── p5.collide2d.min.js
-
 ❗ Known Issues
 
     Pause Menu Bug: Occasionally overlaps with the main menu (fixed in the latest version).
