@@ -16,7 +16,18 @@ var gameMode = ""; // "1P" for single-player, "2P" for two-player mode
 const gridSize = 30; // Size of each grid cell
 let gridWidth, gridHeight;
 let obstacleGrid = []; // Grid representing obstacles (1 for wall, 0 for free space)
+let laikaTarget = null;
 
+let laikaReactionStart = 0;
+let laikaIsStuck = false;
+let laikaPath = [];
+
+const laikaReactionDelay = 1000; // 1-second reaction time after map starts
+
+let laikaLastShotTime = 0;
+const laikaShotCooldown = 2000; // 2 seconds cooldown between shots
+const maxBounces = 1;           // Allow 1 bounce for bullet prediction
+const detectionRange = 500;
 
 
 let isPaused = false;        // Tracks if the game is paused
@@ -116,9 +127,8 @@ function newGame(){
   if (gameMode === "2P") {
     tank2 = new Tank(random(60, width - 60), random(60, height - 60), random(360), 'red', 2);
   } else if (gameMode === "1P") {
-    //laika = new Tank(random(60, width - 60), random(60, height - 60), random(360), 'red', 3);
-    //laikaReactionStart = millis();
-    tank2 = new Tank(random(60, width - 60), random(60, height - 60), random(360), 'red', 2);
+    laika = new Tank(random(60, width - 60), random(60, height - 60), random(360), 'red', 3);
+    laikaReactionStart = millis();
   }
   winner = 0;
   gameend = false; timeout = false;
@@ -166,11 +176,9 @@ function draw() {
       tank2.render();
       tank2.collisionBox();
     } else if (gameMode === "1P") {
-      tank2.render();
-      tank2.collisionBox();
-      //laika.render();
-      //laika.collisionBox();
-      //laikaAI(); // Add AI behavior
+      laika.render();
+      laika.collisionBox();
+      laikaAI(); // Add AI behavior
     }
 
     // Draw All Loot Boxes and Check for Pickup
@@ -180,7 +188,7 @@ function draw() {
       if (gameMode === "2P") {
         lootBox.checkPickup(tank2);    // Check if player 2 collected it
       } else if (gameMode === "1P") {
-        ///lootBox.checkPickup(laika);    // Check if AI collected it (optional)
+        lootBox.checkPickup(laika);    // Check if AI collected it (optional)
       }
     }
 
@@ -223,14 +231,14 @@ function draw() {
         } else if (gameMode === "2P" && bullets1[i].id == 2) {
           tank2.ctr--;
         } else if (gameMode === "1P" && bullets1[i].id == 3) {
-          //laika.ctr--;  // ✅ Decrease AI's bullet counter when bullet despawns
+          laika.ctr--;  // ✅ Decrease AI's bullet counter when bullet despawns
         }
       }
     
       // Handle bullet collisions
       collideBT(bullets1[i], tank1);
       if (gameMode === "2P") collideBT(bullets1[i], tank2);
-      //if (gameMode === "1P") collideBT(bullets1[i], laika);
+      if (gameMode === "1P") collideBT(bullets1[i], laika);
     
       // Handle bullet-wall collisions
       for (var j = 0; j < walls.length; j++) {
@@ -246,7 +254,7 @@ function draw() {
     for (var i = 0; i < walls.length; i++) {
       collideTW(tank1, walls[i]);
       if (gameMode === "2P") collideTW(tank2, walls[i]);
-      //if (gameMode === "1P") collideTW(laika, walls[i]);
+      if (gameMode === "1P") collideTW(laika, walls[i]);
       walls[walls.length-1-i].render();
     }
 
@@ -254,7 +262,7 @@ function draw() {
 
     tank1.update();
     if (gameMode === "2P") tank2.update();
-    //if (gameMode === "1P") laika.update();
+    if (gameMode === "1P") laika.update();
 
     if (gameend) {
       if(!timeout){
@@ -354,7 +362,7 @@ function drawWinningScreen() {
       lootBoxes = [];  // Clear loot boxes
       tank1 = null;
       tank2 = null;
-      //laika = null;
+      laika = null;
 
       // ✅ Change Game State to Main Menu
       gameState = "start";
@@ -447,7 +455,7 @@ function collideTW(tank, wall) {
     }
 
     if (tank.id === 3) {
-      //laikaIsStuck = true;
+      laikaIsStuck = true;
     }
   }
 }
@@ -464,6 +472,293 @@ function collideTT(tank1, tank2) {
 
 //-----------------------------------------------------------------------------------------------------
 
+
+const laikaMaxBullets = 4;       // Max bullets at a time
+
+function laikaAI() {
+  if (!laika || !tank1) return;
+
+  const maxBounces = 2; // Laika can predict up to 2 bounces
+  const rayCount = 23;  // Number of rays in an arc
+  const rayArc = 230;   // Arc angle in front of Laika
+  const rayStep = rayArc / (rayCount - 1);
+
+  for (let i = -rayArc / 2; i <= rayArc / 2; i += rayStep) {
+    let angle = laika.heading + i;
+    let finalPos = raycastWithBounce(laika.pos, angle, maxBounces);
+
+    if (collidePointPoly(finalPos.x, finalPos.y, tank1.hitbox)) {
+      if (laika.ctr < maxbullets) {  // Ensure Laika doesn't exceed bullet limit
+        laika.ctr++;
+        bullets1.push(new Bullet(laika.pos, angle, laika.colour, laika.id)); // Shoot
+      }
+      break; // Stop checking further rays after a successful hit
+    }
+  }
+}
+
+
+
+
+//const laikaReactionDelay = 1000; // 1-second reaction time
+const randomReactionOffset = () => random(200, 500); // ✅ Add randomness (200ms - 500ms)
+
+function waitAfterMapStart() {
+  if (millis() - laikaReactionStart < laikaReactionDelay + randomReactionOffset()) {
+    laika.setBoost(0);
+    laika.setRotation(0);
+    return true; // Wait before taking any actions
+  }
+  return false; // Move to next behavior
+}
+
+
+
+function raycastWithBounce(startPos, angle, maxBounces) {
+  let currentPos = startPos.copy();
+  let direction = p5.Vector.fromAngle(radians(angle));
+  let bounces = 0;
+
+  while (bounces <= maxBounces) {
+    let closestDist = Infinity;
+    let collisionPoint = null;
+    let newDirection = direction.copy();
+
+    // Check for collision with each wall
+    for (let wall of walls) {
+      let hit = collideLineRect(
+        currentPos.x, currentPos.y,
+        currentPos.x + direction.x * 1000,
+        currentPos.y + direction.y * 1000,
+        wall.pos.x - wall.a, wall.pos.y - wall.b,
+        2 * wall.a, 2 * wall.b,
+        true
+      );
+
+      if (hit && hit.x && hit.y) {
+        let distToHit = dist(currentPos.x, currentPos.y, hit.x, hit.y);
+        if (distToHit < closestDist) {
+          closestDist = distToHit;
+          collisionPoint = hit;
+
+          // Reflect the direction (bounce)
+          if (abs(hit.top.y - hit.bottom.y) > abs(hit.left.x - hit.right.x)) {
+            newDirection.y *= -1; // Horizontal bounce
+          } else {
+            newDirection.x *= -1; // Vertical bounce
+          }
+        }
+      }
+    }
+
+    // Draw the ray for visualization
+    //stroke(255, 255, 0);
+    //line(currentPos.x, currentPos.y, currentPos.x + direction.x * closestDist, currentPos.y + direction.y * closestDist);
+
+    if (collisionPoint) {
+      currentPos = createVector(collisionPoint.x, collisionPoint.y);
+      direction = newDirection;
+      bounces++;
+    } else {
+      break; // No more collisions detected
+    }
+  }
+
+  return currentPos; // Final position after bouncing
+}
+
+
+
+
+
+function shootPlayer() {
+  const rayCount = 23;
+  const rayArc = 230;
+  const rayStep = rayArc / (rayCount - 1);
+  const maxBounces = 2; // Allow up to 2 bounces
+
+  for (let i = -rayArc / 2; i <= rayArc / 2; i += rayStep) {
+    let angle = laika.heading + i;
+    if (raycastWithBounce(laika.pos, angle, maxBounces)) {
+      bullets1.push(new Bullet(laika.pos, angle, laika.colour, laika.id));
+      return true; // Shoot if player is detected
+    }
+  }
+  return false;
+}
+
+
+
+function raycastForPlayer(startPos, angle, bouncesLeft) {
+  let ray = p5.Vector.fromAngle(radians(angle)).mult(1000); // Long ray
+  let endPos = p5.Vector.add(startPos, ray);
+
+  for (let wall of walls) {
+    if (collideLineRect(startPos.x, startPos.y, endPos.x, endPos.y, wall.pos.x - wall.a, wall.pos.y - wall.b, wall.a * 2, wall.b * 2)) {
+      if (bouncesLeft > 0) {
+        // ✅ Reflect the ray off the wall
+        let reflectedAngle = reflectAngle(angle, wall);
+        return raycastForPlayer(wall.pos, reflectedAngle, bouncesLeft - 1);
+      }
+      return false; // No more bounces left
+    }
+  }
+
+  // ✅ Check if the ray hits the player's tank
+  return collidePointPoly(endPos.x, endPos.y, tank1.hitbox);
+}
+
+function reflectAngle(angle, isVerticalWall) {
+  return isVerticalWall ? (180 - angle) % 360 : (360 - angle) % 360;
+}
+
+
+
+function reflectAngle(angle, wall) {
+  // Determine if we're hitting a vertical or horizontal wall
+  const isVertical = abs(wall.pos.x - laika.pos.x) < abs(wall.pos.y - laika.pos.y);
+
+  if (isVertical) {
+    return (180 - angle) % 360; // Reflect horizontally
+  } else {
+    return (360 - angle) % 360; // Reflect vertically
+  }
+}
+
+
+function raycastForPlayer(startPos, angle, bouncesLeft) {
+  let ray = p5.Vector.fromAngle(radians(angle)).mult(1000); // Long ray
+  let endPos = p5.Vector.add(startPos, ray);
+  //stroke('yellow');
+  //line(startPos.x, startPos.y, endPos.x, endPos.y);
+
+  for (let wall of walls) {
+    if (collideLineRect(startPos.x, startPos.y, endPos.x, endPos.y, wall.pos.x - wall.a, wall.pos.y - wall.b, wall.a * 2, wall.b * 2)) {
+      if (bouncesLeft > 0) {
+        // ✅ Reflect the ray off the wall
+        let reflectedAngle = reflectAngle(angle, wall);
+        return raycastForPlayer(wall.pos, reflectedAngle, bouncesLeft - 1);
+      }
+      return false; // No more bounces left
+    }
+  }
+
+  // ✅ Check if the ray hits the player's tank
+  return collidePointPoly(endPos.x, endPos.y, tank1.hitbox);
+}
+
+
+
+let lastUnstickTime = 0;
+const unstickCooldown = 2000; // 2 seconds cooldown after unsticking
+
+function unstickLaika() {
+  if (!laikaIsStuck || millis() - lastUnstickTime < unstickCooldown) return false;
+
+  if (!checkWallCollisionAhead(laika)) {
+    laika.setBoost(fw);
+    lastUnstickTime = millis();
+    setTimeout(() => {
+      laikaIsStuck = false;
+      laika.setBoost(0);
+    }, 500);
+  } else {
+    laika.setRotation(random() < 0.5 ? lr : -lr);
+  }
+  return true;
+}
+
+
+
+
+function dodgeBullets() {
+  for (let bullet of bullets1) {
+    let futureBulletPos = p5.Vector.add(bullet.pos, p5.Vector.mult(bullet.vel, 5));
+
+    if (dist(laika.pos.x, laika.pos.y, futureBulletPos.x, futureBulletPos.y) < 50) {
+      // ✅ Move perpendicular to the bullet’s path
+      let dodgeDirection = bullet.vel.copy().rotate(HALF_PI);
+      laika.setRotation(dodgeDirection.heading() > laika.heading ? lr : -lr);
+      laika.setBoost(fw);
+      return true;
+    }
+  }
+  return false;
+}
+
+
+function smoothPath(path) {
+  if (path.length < 3) return path;
+
+  let smoothPath = [path[0]];
+
+  for (let i = 1; i < path.length - 1; i++) {
+    let prev = smoothPath[smoothPath.length - 1];
+    let next = path[i + 1];
+
+    // Check if we can move directly from prev to next without hitting a wall
+    if (!isPathBlocked(prev, next)) {
+      continue; // Skip the current waypoint if it's redundant
+    }
+
+    smoothPath.push(path[i]); // Keep waypoint if it's necessary
+  }
+
+  smoothPath.push(path[path.length - 1]); // Add final destination
+  return smoothPath;
+}
+
+
+
+function findPath(startPos, endPos) {
+  const start = {
+    x: Math.floor(startPos.x / gridSize),
+    y: Math.floor(startPos.y / gridSize)
+  };
+  const end = {
+    x: Math.floor(endPos.x / gridSize),
+    y: Math.floor(endPos.y / gridSize)
+  };
+
+  let openSet = [start];
+  let cameFrom = {};
+
+  let gScore = Array(gridWidth).fill().map(() => Array(gridHeight).fill(Infinity));
+  gScore[start.x][start.y] = 0;
+
+  let fScore = Array(gridWidth).fill().map(() => Array(gridHeight).fill(Infinity));
+  fScore[start.x][start.y] = heuristic(start, end);
+
+  while (openSet.length > 0) {
+    let current = openSet.reduce((a, b) =>
+      fScore[a.x][a.y] < fScore[b.x][b.y] ? a : b
+    );
+
+    if (current.x === end.x && current.y === end.y) {
+      return smoothPath(reconstructPath(cameFrom, current)); // ✅ Apply path smoothing
+    }
+
+    openSet = openSet.filter(node => node !== current);
+
+    for (let neighbor of getNeighbors(current)) {
+      if (obstacleGrid[neighbor.x][neighbor.y] === 1) continue;
+
+      let tentative_gScore = gScore[current.x][current.y] + 1;
+
+      if (tentative_gScore < gScore[neighbor.x][neighbor.y]) {
+        cameFrom[`${neighbor.x},${neighbor.y}`] = current;
+        gScore[neighbor.x][neighbor.y] = tentative_gScore;
+        fScore[neighbor.x][neighbor.y] = tentative_gScore + heuristic(neighbor, end);
+
+        if (!openSet.some(n => n.x === neighbor.x && n.y === neighbor.y)) {
+          openSet.push(neighbor);
+        }
+      }
+    }
+  }
+
+  return [];
+}
 
 
 // Heuristic Function (Manhattan Distance)
@@ -509,6 +804,99 @@ function reconstructPath(cameFrom, current) {
 
 
 
+function pathToPlayer() {
+  if (laikaPath.length === 0 || dist(laika.pos.x, laika.pos.y, tank1.pos.x, tank1.pos.y) > 150) {
+    laikaPath = findPath(laika.pos, tank1.pos); // Recalculate path if far from the player
+  }
+
+  if (laikaPath.length > 0) {
+    let nextPoint = laikaPath[0];
+
+    // If Laika is close enough to the waypoint, move to the next
+    if (dist(laika.pos.x, laika.pos.y, nextPoint.x, nextPoint.y) < 15) {
+      laikaPath.shift();
+    } else {
+      // Calculate desired angle to the next waypoint
+      let desiredAngle = atan2(nextPoint.y - laika.pos.y, nextPoint.x - laika.pos.x);
+      let angleDiff = (desiredAngle - laika.heading + 360) % 360;
+
+      // ✅ Smooth rotation
+      if (angleDiff > 180) {
+        laika.setRotation(-lr); // Rotate Left
+      } else {
+        laika.setRotation(lr);  // Rotate Right
+      }
+
+      // ✅ Move forward if mostly aligned with the waypoint
+      if (abs(angleDiff) < 20) {
+        laika.setBoost(fw);
+      } else {
+        laika.setBoost(0); // Stop to realign if not facing the waypoint
+      }
+
+      return true; // Still following the path
+    }
+  }
+
+  return false; // No path to follow
+}
+
+
+
+function loiter() {
+  laika.setBoost(0);
+  laika.setRotation(0);
+  return true; // Idle if no other behaviors are active
+}
+
+
+function isPathBlocked(start, end) {
+  let dx = end.x - start.x;
+  let dy = end.y - start.y;
+  let steps = Math.max(Math.abs(dx), Math.abs(dy)) / gridSize;
+
+  for (let i = 0; i <= steps; i++) {
+    let x = start.x + (dx * i) / steps;
+    let y = start.y + (dy * i) / steps;
+
+    for (let wall of walls) {
+      if (
+        x > wall.pos.x - wall.a &&
+        x < wall.pos.x + wall.a &&
+        y > wall.pos.y - wall.b &&
+        y < wall.pos.y + wall.b
+      ) {
+        return true; // Path is blocked
+      }
+    }
+  }
+  return false;
+}
+
+
+
+
+function checkWallCollisionAhead(tank, lookAheadDistance = 40) {
+  let futurePos = p5.Vector.add(
+    tank.pos,
+    p5.Vector.fromAngle(radians(tank.heading)).mult(lookAheadDistance)
+  );
+
+  for (let wall of walls) {
+    if (
+      futurePos.x > wall.pos.x - wall.a &&
+      futurePos.x < wall.pos.x + wall.a &&
+      futurePos.y > wall.pos.y - wall.b &&
+      futurePos.y < wall.pos.y + wall.b
+    ) {
+      return true; // Collision detected ahead
+    }
+  }
+  return false;
+}
+
+
+
 
 //-----------------------------------------------------------------------------------------------------
 
@@ -516,10 +904,10 @@ function reconstructPath(cameFrom, current) {
 function keyReleased() {
   tank1.setRotation(0); 
   if (tank2) tank2.setRotation(0);
-  //if (laika) laika.setRotation(0);
+  if (laika) laika.setRotation(0);
   tank1.setBoost(0);
   if (tank2) tank2.setBoost(0);
-  //if (laika) laika.setBoost(0);
+  if (laika) laika.setBoost(0);
 }
 
 
@@ -577,7 +965,7 @@ function clearGameElements() {
   lootBoxes = []; 
   tank1 = null;
   tank2 = null;
-  //laika = null;
+  laika = null;
   winner = 0;
   gameend = false;
   gameOver = false;
