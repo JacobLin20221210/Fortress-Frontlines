@@ -63,7 +63,7 @@ function Tank(x, y, h, colour, id = 0) {
     rect(25, 0, 50, 8);
     pop();
   }
-
+//
   this.createRotatedVector = function(px, py) {
     var vx = px * cos(this.heading) - py * sin(this.heading);
     var vy = px * sin(this.heading) + py * cos(this.heading);
